@@ -7,60 +7,81 @@
 
 from kkbox import *
 from util import *
-import json
 import sys
+from colorama import init
 
 def read_neteast_txt(filename):
-    dict = {}
+    tracks = []
 
     with open(filename,"r", encoding='utf8') as file:
         for line in file:
-            list = line.split(" - ")
-            dict[list[0]] = list[-1].strip('\n')
+            track = line.split(" - ")
+            track[-1] = track[-1].strip('\n')
+            tracks.append(track)
 
     file.close()
-    return dict
+    return tracks
 
-def get_track_info(query):
-    data = search_track(query)
+def get_track_info(title, artist, album):
+    data = search_track(title, artist, album)
 
-    if len(data["tracks"]["data"]) is 0:
+    if data is None:
         return None, None
 
-    track_id = data["tracks"]["data"][0]["id"]
+    track_id = data["id"]
     pathname = get_song_pathname(track_id)
 
-    album_url = data["tracks"]["data"][0]["album"]["images"][0]["url"]
+    album_url = data["album"]["images"][0]["url"]
     album_id = extract(extract(album_url, "album", ",", 6, 0), "/", None, 1, 0)
     
     return pathname, album_id
 
-def load_tracks_info(tracks_dict, start_index):
+def load_tracks_info(tracks, start_index, playlist_name):
     info_dict = {}
-    error_tracks = {}
-    for key, value in list(tracks_dict.items())[start_index:]:
-        print("Processing song \t" + key + " \tby \t" + value + " . . . ", end='')
-        pathname, album_id = get_track_info(key + " " + value)
+    error_tracks = []
+    index = 1
+    for track in tracks[start_index:]:
+        title = track[0].replace("(", "").replace(")", "")
+        # if title.find(" - ") != -1:
+        #     title = title[:title.find(" - ")]
+        artist = track[-2].replace("/", " ")
+        album = track[-1]
+
+        print("#" + str(index) + " \tProcessing \t" + title + " - " + artist + " - " + album, end='')
+        pathname, album_id = get_track_info(title, artist, album)
         if pathname is not None and album_id is not None:
             info_dict[pathname] = album_id
-            print("\tSuccess!")
+            print("\t\033[92mSuccess\033[0m")
+            append_to_playlist(pathname, album_id, playlist_name)
         else:
-            error_tracks[key] = value
-            print("\ERROR!!!!")
+            print(pathname)
+            print(album_id)
+            error_tracks.append("#" + str(index) + " - " + title + " - " + artist + " - " + album)
+            print("\t\033[91mERROR\033[0m")
+
+        index += 1
 
     return info_dict, error_tracks
 
 def generate_error_file(error_tracks, playlist_name):
+    if len(error_tracks) == 0:
+        return
     print("\n========== FOLLOWING SONGS ARE NOT ADDED =========\n")
     with open(playlist_name + "_error.txt", "w", encoding='utf8') as file:
-        for key, value in error_tracks.items():
-            print(key + " - " + value)
-            file.write(key + " - " + value + "\n")
+        for track in error_tracks:
+            print(track)
+            file.write(track + "\n")
+
+init()
 
 source_list = sys.argv[1]
 kkbox_list = sys.argv[2]
 
-tracks_dict = read_neteast_txt(source_list)
-info_dict, error_tracks = load_tracks_info(tracks_dict, 0)
-generate_kkbox_playlist(info_dict, kkbox_list)
+init_kkbox_playlist(kkbox_list)
+
+tracks = read_neteast_txt(source_list)
+info_dict, error_tracks = load_tracks_info(tracks, 0, kkbox_list)
+
+finish_kkbox_playlist(info_dict, kkbox_list)
+
 generate_error_file(error_tracks, kkbox_list)
